@@ -62,7 +62,7 @@ def plot_recall(metrics):
     ax.set_ylabel("share of captions", color=text_color)
     n_queries = metrics["n_queries"]
     n_images = metrics["n_images"]
-    ax.set_title(f"Text -> image search on COCO val2017\n({n_queries} captions, {n_images} images)")
+    ax.set_title(f"Text-to-image search on COCO")
 
     # keep the axes quiet: no top/right frame, light grid behind the bars
     ax.spines["top"].set_visible(False)
