@@ -1,13 +1,16 @@
 """
 Export the files the browser demo needs (the "image search" tab of image-classifier).
 
-The full 5000 images are too big for a web page, so the demo uses the first 1000:
-    thumbs/0.jpg ... thumbs/999.jpg   small copies of the images (longest side 320px)
-    embeds.bin                        their CLIP vectors, 1000 x 512 float32, row by row
-    meta.json                         model name, vector size, and the first caption of each image
+All 5000 images, made small enough for a web page:
+    thumbs/0.jpg ... thumbs/4999.jpg  small copies of the images (longest side 256px)
+    embeds.bin                        their centered CLIP vectors, 5000 x 512 float32, row by row
+    meta.json                         model name, vector size, image mean, text mean,
+                                      and the first caption of each image
 
 In the browser, Transformers.js runs "Xenova/clip-vit-base-patch32" (the same CLIP model)
-to turn a text or an uploaded image into a vector, then compares it with embeds.bin.
+to turn a text or an uploaded image into a vector, centers it with the mean from meta.json
+(text mean for texts, image mean for images), then compares it with embeds.bin.
+Thumbnails are only downloaded when they are shown, so the page itself stays light.
 
 Output: ../image-classifier/docs/search/ (the image-classifier repo next to this one)
 
@@ -17,15 +20,13 @@ Usage:
 
 import os
 import json
-import numpy as np
 from PIL import Image
 from src.data import load_captions
-from src.embed import load_embeds
+from src.search import load_gallery
 
 demo_path = os.path.join(os.path.dirname(__file__), "..", "..", "image-classifier", "docs", "search")
 browser_model_name = "Xenova/clip-vit-base-patch32"
-n_demo_images = 1000
-thumb_size = 320
+thumb_size = 256
 jpeg_quality = 80
 
 
@@ -46,32 +47,45 @@ def save_thumbnails(items, out_dir):
         thumb_path = os.path.join(thumbs_dir, f"{index}.jpg")
         image.save(thumb_path, quality=jpeg_quality)
 
+        if (index + 1) % 1000 == 0:
+            print(f"  {index + 1} / {len(items)} thumbnails")
 
-def save_embeds(embeds, out_dir):
+
+def save_embeds(gallery, out_dir):
     """
     function: save the vectors as raw float32 bytes
     the browser reads them with: new Float32Array(await response.arrayBuffer())
     """
-    embeds = embeds.astype("<f4")  # float32, little-endian (the byte order browsers use)
+    gallery = gallery.astype("<f4")  # float32, little-endian (the byte order browsers use)
     embeds_path = os.path.join(out_dir, "embeds.bin")
-    embeds.tofile(embeds_path)
+    gallery.tofile(embeds_path)
 
 
-def save_meta(items, embeds, out_dir):
+def save_meta(items, gallery, image_mean, text_mean, out_dir):
     """
-    function: save what the browser needs to read embeds.bin and show the results
+    function: save what the browser needs to read embeds.bin, center queries, and show the results
     """
     first_captions = []
     for item in items:
         first_caption = item["captions"][0].strip()
         first_captions.append(first_caption)
 
-    n_images = embeds.shape[0]
-    dim = embeds.shape[1]
+    # round the means to 6 decimals to keep meta.json small
+    image_mean_list = []
+    for value in image_mean:
+        image_mean_list.append(round(float(value), 6))
+    text_mean_list = []
+    for value in text_mean:
+        text_mean_list.append(round(float(value), 6))
+
+    n_images = gallery.shape[0]
+    dim = gallery.shape[1]
     meta = {
         "model": browser_model_name,
         "count": n_images,
         "dim": dim,
+        "image_mean": image_mean_list,
+        "text_mean": text_mean_list,
         "captions": first_captions,
     }
     meta_path = os.path.join(out_dir, "meta.json")
@@ -79,11 +93,11 @@ def save_meta(items, embeds, out_dir):
         json.dump(meta, f)
 
 
-def export_demo(items, embeds, out_dir):
+def export_demo(items, gallery, image_mean, text_mean, out_dir):
     os.makedirs(out_dir, exist_ok=True)
     save_thumbnails(items, out_dir)
-    save_embeds(embeds, out_dir)
-    save_meta(items, embeds, out_dir)
+    save_embeds(gallery, out_dir)
+    save_meta(items, gallery, image_mean, text_mean, out_dir)
 
 
 def folder_size_mb(folder):
@@ -97,14 +111,10 @@ def folder_size_mb(folder):
 
 if __name__ == "__main__":
     items = load_captions()
-    embeds = load_embeds()
+    gallery, image_mean, text_mean = load_gallery()
 
-    # keep only the first n_demo_images, row i of embeds still belongs to items[i]
-    demo_items = items[:n_demo_images]
-    demo_embeds = embeds[:n_demo_images]
-
-    print(f"Exporting {len(demo_items)} images to {demo_path} ...")
-    export_demo(demo_items, demo_embeds, demo_path)
+    print(f"Exporting {len(items)} images to {demo_path} ...")
+    export_demo(items, gallery, image_mean, text_mean, demo_path)
 
     size_mb = folder_size_mb(demo_path)
     print(f"done, {size_mb:.1f} MB")

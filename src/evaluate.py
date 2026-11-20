@@ -6,6 +6,10 @@ COCO gives every image ~5 human-written captions, which are a free test set:
     and check whether its own image is ranked in the top K of the 5000 images.
     Recall@K = share of captions whose image is in the top K.
 
+Comparison experiment: plain CLIP vectors vs centered vectors (see src/embed.py).
+Besides Recall@K, it counts how often each image appears in the top 10 of all searches:
+a few "hub" images that appear in almost every result list make the search worse.
+
 Output: data/metrics.json
 
 Usage:
@@ -16,98 +20,94 @@ import os
 import json
 import numpy as np
 from src.data import data_path, load_captions
-from src.model import load_model, encode_texts, model_name
-from src.embed import load_embeds
+from src.model import model_name
+from src.embed import load_embeds, load_caption_embeds, load_means, flatten_captions, center
 
 metrics_path = os.path.join(data_path, "metrics.json")
 ks = [1, 5, 10]
-batch_size = 256
+hub_k = 10
+batch_size = 1000
 
 
-def caption_queries(items):
-    """
-    function: flatten all captions into one list, and remember which image each one belongs to
-
-    output:
-        texts: ["A man is in a kitchen making pizzas.", ...]   25014 captions
-        targets: [0, 0, 0, 0, 0, 1, 1, ...]                     index of the correct image
-    """
-    texts = []
-    targets = []
-    for index in range(len(items)):
-        captions = items[index]["captions"]
-        for caption in captions:
-            texts.append(caption)
-            targets.append(index)
-    return texts, np.array(targets)
-
-
-def compute_ranks(model, processor, texts, targets, embeds):
+def compute_ranks(queries, targets, gallery):
     """
     function: for every caption, find the rank of its correct image among all images
     rank 0 = the correct image is the best match
 
+    also counts how often each image is in the top hub_k of a search
     computed batch by batch, so we never hold the full 25014 x 5000 score matrix
     """
     ranks = []
-    n_texts = len(texts)
+    top_counts = np.zeros(len(gallery), dtype=int)
+    n_queries = len(queries)
 
-    for start in range(0, n_texts, batch_size):
-        end = min(start + batch_size, n_texts)
-        batch_texts = texts[start:end]
-        batch_targets = targets[start:end]
-
-        text_vectors = encode_texts(model, processor, batch_texts)
+    for start in range(0, n_queries, batch_size):
+        end = min(start + batch_size, n_queries)
 
         # (batch, 512) @ (512, 5000) -> (batch, 5000): score of every caption with every image
-        scores = text_vectors @ embeds.T
+        scores = queries[start:end] @ gallery.T
 
-        for row in range(len(batch_texts)):
+        for row in range(end - start):
             row_scores = scores[row]
-            target = batch_targets[row]
+            target = targets[start + row]
             correct_score = row_scores[target]
 
             # rank = how many images score higher than the correct one
             n_better = np.sum(row_scores > correct_score)
             ranks.append(n_better)
 
-        if end % 5120 == 0 or end == n_texts:
-            print(f"  {end} / {n_texts} captions")
+            # the hub_k best images of this search
+            best = np.argsort(-row_scores)[:hub_k]
+            for index in best:
+                top_counts[index] += 1
 
-    return np.array(ranks)
+    return np.array(ranks), top_counts
 
 
-def recall_at_k(ranks):
+def summarize(ranks, top_counts):
     """
-    function: Recall@K = share of queries whose correct image is in the top K
+    function: Recall@K, plus how uneven the top-10 appearances are
     """
-    recalls = {}
+    result = {}
     for k in ks:
         in_top_k = ranks < k
-        recall = in_top_k.mean()
-        recalls[f"recall@{k}"] = float(recall)
-    return recalls
+        result[f"recall@{k}"] = float(in_top_k.mean())
+
+    # if every image appeared equally often, each would appear this many times
+    fair_share = top_counts.mean()
+    result["max_top10_count"] = int(top_counts.max())
+    result["fair_top10_count"] = float(fair_share)
+    result["never_in_top10"] = int(np.sum(top_counts == 0))
+    return result
 
 
 if __name__ == "__main__":
     items = load_captions()
-    embeds = load_embeds()
-    model, processor = load_model()
+    texts, targets = flatten_captions(items)
+    image_embeds = load_embeds()
+    caption_embeds = load_caption_embeds()
+    image_mean, text_mean = load_means()
 
-    texts, targets = caption_queries(items)
     print(f"Searching with {len(texts)} captions over {len(items)} images ...")
-    ranks = compute_ranks(model, processor, texts, targets, embeds)
-    recalls = recall_at_k(ranks)
 
-    for name in recalls:
-        value = recalls[name]
-        print(f"{name}: {value:.4f}")
+    ranks, top_counts = compute_ranks(caption_embeds, targets, image_embeds)
+    plain = summarize(ranks, top_counts)
+
+    centered_queries = center(caption_embeds, text_mean)
+    centered_gallery = center(image_embeds, image_mean)
+    ranks, top_counts = compute_ranks(centered_queries, targets, centered_gallery)
+    centered = summarize(ranks, top_counts)
+
+    print(f"{'':28s} {'plain':>8s} {'centered':>9s}")
+    for name in plain:
+        print(f"{name:28s} {plain[name]:8.4g} {centered[name]:9.4g}")
 
     metrics = {
         "model": model_name,
         "n_images": len(items),
         "n_queries": len(texts),
-        "text_to_image": recalls,
+        "plain": plain,
+        "centered": centered,
     }
     with open(metrics_path, "w") as f:
         json.dump(metrics, f, indent=2)

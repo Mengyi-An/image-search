@@ -1,9 +1,9 @@
 """
 Draw the figures for the README.
 
-1. figures/recall.png: Recall@1/5/10 of text -> image search (from data/metrics.json,
-   written by src/evaluate.py)
-2. figures/search_examples.png: a few text queries, each with its top 5 images
+1. figures/recall.png: Recall@1/5/10 of text -> image search, plain vs centered vectors
+   (from data/metrics.json, written by src/evaluate.py)
+2. figures/search_examples.png: a few text queries, each with its top 5 images (centered)
 
 Usage:
     python -m src.plot
@@ -15,9 +15,8 @@ import matplotlib.pyplot as plt
 from PIL import Image
 from src.data import load_captions
 from src.model import load_model
-from src.embed import load_embeds
-from src.evaluate import metrics_path
-from src.search import search_by_text
+from src.evaluate import metrics_path, ks
+from src.search import load_gallery, search_by_text
 
 figures_path = os.path.join(os.path.dirname(__file__), "..", "figures")
 
@@ -29,7 +28,8 @@ example_queries = [
 ]
 n_results = 5
 
-bar_color = "#2a78d6"
+plain_color = "#86b6ef"      # light blue: plain CLIP vectors
+centered_color = "#2a78d6"   # blue: centered vectors (the one the search uses)
 text_color = "#52514e"
 
 
@@ -38,31 +38,45 @@ def load_metrics():
         return json.load(f)
 
 
-def plot_recall(metrics):
-    recalls = metrics["text_to_image"]
-
-    names = []
-    values = []
-    for name in recalls:
-        names.append(name.replace("recall", "Recall"))
-        values.append(recalls[name])
-
-    fig, ax = plt.subplots(figsize=(5, 3.5))
-    bars = ax.bar(names, values, width=0.5, color=bar_color)
+def draw_bars(ax, positions, values, color, label):
+    bars = ax.bar(positions, values, width=0.36, color=color, label=label)
 
     # write the value above each bar
     for i in range(len(bars)):
         bar = bars[i]
         value = values[i]
         x = bar.get_x() + bar.get_width() / 2
-        label = f"{value:.1%}"
-        ax.text(x, value + 0.02, label, ha="center", color=text_color)
+        text = f"{value:.1%}"
+        ax.text(x, value + 0.02, text, ha="center", fontsize=8, color=text_color)
 
+
+def plot_recall(metrics):
+    names = []
+    plain_values = []
+    centered_values = []
+    for k in ks:
+        key = f"recall@{k}"
+        names.append(f"Recall@{k}")
+        plain_values.append(metrics["plain"][key])
+        centered_values.append(metrics["centered"][key])
+
+    # two bars per K: plain on the left, centered on the right
+    plain_positions = []
+    centered_positions = []
+    for i in range(len(names)):
+        plain_positions.append(i - 0.19)
+        centered_positions.append(i + 0.19)
+
+    fig, ax = plt.subplots(figsize=(5.5, 3.5))
+    draw_bars(ax, plain_positions, plain_values, plain_color, "plain CLIP vectors")
+    draw_bars(ax, centered_positions, centered_values, centered_color, "centered vectors")
+
+    ax.set_xticks(range(len(names)))
+    ax.set_xticklabels(names)
     ax.set_ylim(0, 1)
     ax.set_ylabel("share of captions", color=text_color)
-    n_queries = metrics["n_queries"]
-    n_images = metrics["n_images"]
-    ax.set_title(f"Text-to-image search on COCO")
+    ax.set_title("Text-to-image search on COCO")
+    ax.legend(loc="upper left", frameon=False)
 
     # keep the axes quiet: no top/right frame, light grid behind the bars
     ax.spines["top"].set_visible(False)
@@ -75,13 +89,13 @@ def plot_recall(metrics):
     print(f"saved to {out_path}")
 
 
-def plot_search_examples(items, model, processor, embeds):
+def plot_search_examples(items, model, processor, gallery, text_mean):
     n_rows = len(example_queries)
     fig, axes = plt.subplots(n_rows, n_results, figsize=(2.2 * n_results, 2.4 * n_rows))
 
     for row in range(n_rows):
         query = example_queries[row]
-        indices, scores = search_by_text(query, model, processor, embeds, k=n_results)
+        indices, scores = search_by_text(query, model, processor, gallery, text_mean, k=n_results)
 
         for col in range(n_results):
             ax = axes[row][col]
@@ -113,6 +127,6 @@ if __name__ == "__main__":
     plot_recall(metrics)
 
     items = load_captions()
-    embeds = load_embeds()
+    gallery, image_mean, text_mean = load_gallery()
     model, processor = load_model()
-    plot_search_examples(items, model, processor, embeds)
+    plot_search_examples(items, model, processor, gallery, text_mean)
