@@ -20,7 +20,7 @@ from transformers import CLIPModel, CLIPProcessor
 
 model_name = "openai/clip-vit-base-patch32"
 
-# use the Apple GPU (mps) on a Mac, the NVIDIA GPU (cuda) on Colab, otherwise the CPU
+# if GPU is available, otherwise CPU
 if torch.backends.mps.is_available():
     device = "mps"
 elif torch.cuda.is_available():
