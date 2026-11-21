@@ -2,6 +2,11 @@
 Load COCO val2017: 5000 images, each with ~5 human-written captions.
 Downloaded from cocodataset.org on first run (~1GB).
 
+Output:
+images: 5000
+captions per image: min captions 5, max captions 7, total captions 25014
+words per caption: mean 10.4, max 50
+
 Usage (download data and print dataset statistics):
     python -m src.data
 """
@@ -21,14 +26,14 @@ images_zip_path = os.path.join(data_path, "val2017.zip")
 captions_zip_path = os.path.join(data_path, "annotations_trainval2017.zip")
 
 # where the files end up after unzipping
-images_dir = os.path.join(data_path, "val2017")
+images_file = os.path.join(data_path, "val2017")
 captions_file = os.path.join(data_path, "annotations", "captions_val2017.json")
 
 
 def download_and_unzip(url, zip_path, check_path):
     """
     function: download a zip file, unzip it into data/, then delete the zip
-    skip if check_path (the unzipped file or folder) already exists
+    skip if the unzipped file or folder already exists
     """
     if os.path.exists(check_path):
         print(f"Already downloaded: {check_path}")
@@ -36,7 +41,6 @@ def download_and_unzip(url, zip_path, check_path):
 
     os.makedirs(data_path, exist_ok=True)
 
-    print(f"Downloading {url} ...")
     urllib.request.urlretrieve(url, zip_path)
     with zipfile.ZipFile(zip_path) as f:
         f.extractall(data_path)
@@ -62,17 +66,22 @@ def load_captions():
     for image in coco["images"]:
         image_id = image["id"]
         image_name = image["file_name"]
-        path = os.path.join(images_dir, image_name)
+        path = os.path.join(images_file, image_name) # saved path
         images[image_id] = {"path": path, "captions": []}
 
     # coco["annotations"] is a list of dicts: {"image_id": 397133, "caption": "...", ...}
     for annotation in coco["annotations"]:
         image_id = annotation["image_id"]
         caption = annotation["caption"]
-        entry = images[image_id]
-        entry["captions"].append(caption)
 
-    # turn into a list, so each image has a fixed index 0, 1, 2, ...
+        images[image_id]["captions"].append(caption)
+
+    # turn into a list
+    #     items = [
+    #     {"path": ".../000000397133.jpg", "captions": [...]},
+    #     {"path": ".../000000037777.jpg", "captions": [...]},   
+    #     ...
+    # ]
     items = list(images.values())
     return items
 
@@ -86,8 +95,8 @@ def describe(items):
         captions per image: min 5, max 7, total 25014
         words per caption: mean 10.4, max 50
     """
-    n_captions = []
-    n_words = []
+    n_captions = [] # 统计每张图有几句captions
+    n_words = [] # 统计每句 caption 有多少个 words
     for item in items:
         captions = item["captions"]
         n_captions.append(len(captions))
@@ -95,9 +104,13 @@ def describe(items):
             words = caption.split()
             n_words.append(len(words))
 
+    # count the number of images
     n_images = len(items)
+
+    # count the minimum captions and maximum captions for each image
     min_captions = min(n_captions)
     max_captions = max(n_captions)
+
     total_captions = sum(n_captions)
     mean_words = sum(n_words) / len(n_words)
     max_words = max(n_words)
@@ -116,7 +129,7 @@ def describe(items):
 
 
 if __name__ == "__main__":
-    download_and_unzip(images_url, images_zip_path, images_dir)
+    download_and_unzip(images_url, images_zip_path, images_file)
     download_and_unzip(captions_url, captions_zip_path, captions_file)
 
     items = load_captions()
