@@ -11,7 +11,7 @@ No training: the weights are downloaded from the Hugging Face Hub on first run (
 The browser demo uses "Xenova/clip-vit-base-patch32", the same model converted to ONNX,
 so vectors computed here and in the browser can be compared.
 
-Usage (similarity check on one image):
+Usage:
     python -m src.model
 """
 
@@ -45,13 +45,22 @@ def normalize(vectors):
     """
     function: scale every vector to length 1
     """
-    lengths = vectors.norm(dim=-1, keepdim=True)
-    return vectors / lengths
+
+    # Assume we have a vector[3, 4]
+    lengths = vectors.norm(dim=-1, keepdim=True)    # compute length: √(3² + 4²) = √25 = 5
+    return vectors / lengths    # Normalize: [3/5, 4/5] = [0.6, 0.8]
 
 
 def encode_images(model, processor, images):
     """
     function: turn a list of PIL images into normalized vectors
+    64 images of different sizes
+    → processor       (64, 3, 224, 224)   resize, center crop, normalize pixels
+    → .to(device)     move to GPU
+    → image encoder   (64, 512)           one vector per image
+    → normalize       (64, 512)           scale each vector to length 1
+    → .cpu().numpy()  numpy array, used by the later steps
+
 
     output: numpy array, shape (number of images, 512)
     """
@@ -75,8 +84,8 @@ def encode_texts(model, processor, texts):
     # padding: make all texts in the batch the same length
     # truncation: CLIP reads at most 77 tokens
     inputs = processor(text=texts, return_tensors="pt", padding=True, truncation=True)
-    input_ids = inputs["input_ids"].to(device)
-    attention_mask = inputs["attention_mask"].to(device)
+    input_ids = inputs["input_ids"].to(device)  # 每个 token 的 id
+    attention_mask = inputs["attention_mask"].to(device)    # 1 = 真实的 token，0 = 补上去的
 
     with torch.no_grad():
         outputs = model.get_text_features(input_ids=input_ids, attention_mask=attention_mask)

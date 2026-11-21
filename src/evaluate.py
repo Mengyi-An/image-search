@@ -21,7 +21,7 @@ import json
 import numpy as np
 from src.data import data_path, load_captions
 from src.model import model_name
-from src.embed import load_embeds, load_caption_embeds, load_means, flatten_captions, center
+from src.embed import load_image_embeds, load_caption_embeds, load_means, flatten_captions, center
 
 metrics_path = os.path.join(data_path, "metrics.json")
 ks = [1, 5, 10]
@@ -84,7 +84,7 @@ def summarize(ranks, top_counts):
 if __name__ == "__main__":
     items = load_captions()
     texts, targets = flatten_captions(items)
-    image_embeds = load_embeds()
+    image_embeds = load_image_embeds()
     caption_embeds = load_caption_embeds()
     image_mean, text_mean = load_means()
 

@@ -20,7 +20,7 @@ import numpy as np
 from PIL import Image
 from src.data import load_captions
 from src.model import load_model, encode_images, encode_texts
-from src.embed import load_embeds, load_means, center
+from src.embed import load_image_embeds, load_means, center
 
 top_k = 10
 
@@ -32,7 +32,7 @@ def load_gallery():
     output: centered image vectors (5000, 512), image mean, text mean
     """
     image_mean, text_mean = load_means()
-    embeds = load_embeds()
+    embeds = load_image_embeds()
     gallery = center(embeds, image_mean)
     return gallery, image_mean, text_mean
 
