@@ -1,11 +1,11 @@
 """
 Search the COCO images with a text or with an image.
 
-    query (text or image) -> CLIP -> query vector -> centered
-    query vector . every centered image vector -> 5000 similarity scores -> top k images
+    text  -> CLIP text encoder  -> subtract text mean  -> normalize ┐
+    image -> CLIP image encoder -> subtract image mean -> normalize ┴-> query vector
 
-Centering (see src/embed.py): image vectors and image queries subtract the image mean,
-text queries subtract the text mean, then all are normalized again.
+    scores = gallery @ query vector     (gallery: 5000 centered image vectors)
+    top k images = the k highest scores
 
 Needs data/image_embeds.npy and data/caption_embeds.npy from `python -m src.embed`.
 
@@ -27,7 +27,7 @@ top_k = 10
 
 def load_gallery():
     """
-    function: everything a search needs besides the model
+    function: centered image vectors
 
     output: centered image vectors (5000, 512), image mean, text mean
     """
@@ -45,22 +45,34 @@ def top_matches(query_vector, gallery, k):
     output: indices of the k best images (best first), and their scores
     """
     # (5000, 512) @ (512,) -> (5000,): one score per image
-    scores = gallery @ query_vector
+    # query_vector就是做 search 时候，input 的 image/text(以文搜图/以图搜图)
+    scores = gallery @ query_vector     # cosine similarity
 
-    # argsort sorts from small to large, so sort the negative scores to get large first
-    order = np.argsort(-scores)
+    # argsort sorts from small to large, then [::-1] reverse the list
+    # we get indices from argsort instead of list elements
+    # 这里取的 indices 是排序前的 indices
+    order = np.argsort(scores)[::-1] 
     best_indices = order[:k]
     best_scores = scores[best_indices]
     return best_indices, best_scores
 
 
 def search_by_text(text, model, processor, gallery, text_mean, k=top_k):
+    """
+    function: search with text
+        把用户输入的那一句话转成向量
+        减去文字均值，再归一化（中心化）
+        和图库里 5000 个中心化后的图片向量算点积，取分数最高的 k 张
+    """
+
     text_vectors = encode_texts(model, processor, [text])
     query_vector = center(text_vectors[0], text_mean)
     return top_matches(query_vector, gallery, k)
 
 
 def search_by_image(image_path, model, processor, gallery, image_mean, k=top_k):
+    # function: search with image
+    
     image = Image.open(image_path).convert("RGB")
     image_vectors = encode_images(model, processor, [image])
     query_vector = center(image_vectors[0], image_mean)
