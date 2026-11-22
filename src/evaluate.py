@@ -4,11 +4,9 @@ Evaluate text -> image search with Recall@K on COCO val2017.
 COCO gives every image ~5 human-written captions, which are a free test set:
     use each caption (25014 in total) as a search query,
     and check whether its own image is ranked in the top K of the 5000 images.
-    Recall@K = share of captions whose image is in the top K.
+    Recall@K = propotion of captions whose image is in the top K.
 
 Comparison experiment: plain CLIP vectors vs centered vectors (see src/embed.py).
-Besides Recall@K, it counts how often each image appears in the top 10 of all searches:
-a few "hub" images that appear in almost every result list make the search worse.
 
 Output: data/metrics.json
 
@@ -25,7 +23,6 @@ from src.embed import load_image_embeds, load_caption_embeds, load_means, flatte
 
 metrics_path = os.path.join(data_path, "metrics.json")
 ks = [1, 5, 10]
-hub_k = 10
 batch_size = 1000
 
 
@@ -34,50 +31,40 @@ def compute_ranks(queries, targets, gallery):
     function: for every caption, find the rank of its correct image among all images
     rank 0 = the correct image is the best match
 
-    also counts how often each image is in the top hub_k of a search
     computed batch by batch, so we never hold the full 25014 x 5000 score matrix
     """
     ranks = []
-    top_counts = np.zeros(len(gallery), dtype=int)
     n_queries = len(queries)
 
-    for start in range(0, n_queries, batch_size):
-        end = min(start + batch_size, n_queries)
+    for i in range(0, n_queries, batch_size):
+        batch_queries = queries[i: i+batch_size]
 
-        # (batch, 512) @ (512, 5000) -> (batch, 5000): score of every caption with every image
-        scores = queries[start:end] @ gallery.T
+        batch_scores = batch_queries @ gallery.T
 
-        for row in range(end - start):
-            row_scores = scores[row]
-            target = targets[start + row]
+        for row in range(len(batch_queries)):
+            row_scores = batch_scores[row]
+
+            # targets 是一个一维数组，targets[k] 表示第 k 句 caption 对应的图片下标。
+            # i 是这一批的起始位置（0、1000、2000……），row 是这句 caption 在这一批里的第几行，所以 i + row 就是它在全部 caption 中的位置，targets[i + row] 就是它对应的正确图片。
+            target = targets[i + row] # targets is imported from embed.py
             correct_score = row_scores[target]
 
             # rank = how many images score higher than the correct one
             n_better = np.sum(row_scores > correct_score)
             ranks.append(n_better)
 
-            # the hub_k best images of this search
-            best = np.argsort(-row_scores)[:hub_k]
-            for index in best:
-                top_counts[index] += 1
-
-    return np.array(ranks), top_counts
+    return np.array(ranks)
 
 
-def summarize(ranks, top_counts):
+def summarize(ranks):
     """
-    function: Recall@K, plus how uneven the top-10 appearances are
+    function: Recall@K
+    对单句 caption 来说，排名越小越好
     """
     result = {}
     for k in ks:
         in_top_k = ranks < k
         result[f"recall@{k}"] = float(in_top_k.mean())
-
-    # if every image appeared equally often, each would appear this many times
-    fair_share = top_counts.mean()
-    result["max_top10_count"] = int(top_counts.max())
-    result["fair_top10_count"] = float(fair_share)
-    result["never_in_top10"] = int(np.sum(top_counts == 0))
     return result
 
 
@@ -90,17 +77,17 @@ if __name__ == "__main__":
 
     print(f"Searching with {len(texts)} captions over {len(items)} images ...")
 
-    ranks, top_counts = compute_ranks(caption_embeds, targets, image_embeds)
-    plain = summarize(ranks, top_counts)
+    ranks = compute_ranks(caption_embeds, targets, image_embeds)
+    plain = summarize(ranks)
 
     centered_queries = center(caption_embeds, text_mean)
     centered_gallery = center(image_embeds, image_mean)
-    ranks, top_counts = compute_ranks(centered_queries, targets, centered_gallery)
-    centered = summarize(ranks, top_counts)
+    ranks = compute_ranks(centered_queries, targets, centered_gallery)
+    centered = summarize(ranks)
 
-    print(f"{'':28s} {'plain':>8s} {'centered':>9s}")
+    print(f"{'':12s} {'plain':>8s} {'centered':>9s}")
     for name in plain:
-        print(f"{name:28s} {plain[name]:8.4g} {centered[name]:9.4g}")
+        print(f"{name:12s} {plain[name]:8.4f} {centered[name]:9.4f}")
 
     metrics = {
         "model": model_name,
