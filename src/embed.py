@@ -73,6 +73,7 @@ def embed_images(model, processor, items):
 def embed_texts(model, processor, texts):
     """
     function: encode all texts batch by batch
+              the type of texts must be a list
 
     output: numpy array, shape (number of texts, 512)
     """
@@ -139,9 +140,9 @@ if __name__ == "__main__":
     # float32 is enough precision and half the size of float64
     image_embeds = image_embeds.astype(np.float32)
     caption_embeds = caption_embeds.astype(np.float32)
-    np.save(embeds_path, image_embeds)
+    np.save(image_embeds_path, image_embeds)
     np.save(caption_embeds_path, caption_embeds)
 
     print(f"images: {image_embeds.shape}, took {image_seconds:.0f}s")
     print(f"captions: {caption_embeds.shape}, took {text_seconds:.0f}s")
-    print(f"saved to {embeds_path} and {caption_embeds_path}")
+    print(f"saved to {image_embeds_path} and {caption_embeds_path}")
