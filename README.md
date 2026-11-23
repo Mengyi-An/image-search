@@ -13,12 +13,12 @@ Type a description or upload a photo to find the most similar images, and click 
 | plain              | 30.5%           | 54.8%           | 66.2%           |
 | **centered** | **30.9%** | **55.3%** | **66.2%** |
 
-![Recall@K](figures/recall.png)
+<img src="figures/recall.png" alt="Recall@K" width="500">
 
 - Out of 5,000 photos, the right one is the top match for about 1 in 3 captions, and in the top 10 for 2 in 3.
 - Centering (subtracting the image mean from image vectors and the text mean from text vectors) gives a small improvement.
 
-![Search examples](figures/search_examples.png)
+<img src="figures/search_examples.png" alt="Search examples" width="700">
 
 ## Project Structure
 
