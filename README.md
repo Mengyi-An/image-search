@@ -6,18 +6,11 @@ Text-to-image and image-to-image search over 5,000 COCO photos with CLIP, evalua
 
 Type a description or upload a photo to find the most similar images, and click a result to see similar photos. The demo is a tab of my [image classifier](https://github.com/Mengyi-An/image-classifier) page.
 
-## Features
-
-- Pretrained CLIP ViT-B/32 (no training), with images and texts in the same vector space
-- Evaluation on COCO val2017: each of the 25,014 captions searches for its own photo
-- Comparison experiment: plain vs centered vectors
-- Browser deployment with Transformers.js on GitHub Pages
-
 ## Results
 
-| Vectors | Recall@1 | Recall@5 | Recall@10 |
-|---|---|---|---|
-| plain | 30.5% | 54.8% | 66.2% |
+| Vectors            | Recall@1        | Recall@5        | Recall@10       |
+| ------------------ | --------------- | --------------- | --------------- |
+| plain              | 30.5%           | 54.8%           | 66.2%           |
 | **centered** | **30.9%** | **55.3%** | **66.2%** |
 
 ![Recall@K](figures/recall.png)
@@ -48,8 +41,8 @@ pip install -r requirements.txt
 
 python -m src.data          # download COCO val2017 (~1 GB)
 python -m src.embed         # encode photos and captions
-python -m src.evaluate      # -> data/metrics.json
-python -m src.plot          # -> figures/
+python -m src.evaluate      # data/metrics.json
+python -m src.plot          # figures
 python -m src.search "a dog on the beach"
 python -m src.export_demo   # -> ../image-classifier/docs/search/
 ```
